@@ -1,13 +1,17 @@
 const express = require('express');
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const cors = require('cors');
-const qrcode = require('qrcode-terminal'); // Adicionado para ver o QR no log
+const qrcode = require('qrcode-terminal');
 
 const app = express();
 app.use(express.json());
 app.use(cors());
 
-// AJUSTE 1: Configuração para rodar em servidores (Linux/Nuvem)
+// Rota de teste para ver no navegador se o servidor está vivo
+app.get('/', (req, res) => {
+    res.send("Servidor do WhatsApp está Online e Rodando!");
+});
+
 const client = new Client({
     authStrategy: new LocalAuth(),
     puppeteer: {
@@ -16,29 +20,20 @@ const client = new Client({
             '--no-sandbox',
             '--disable-setuid-sandbox',
             '--disable-dev-shm-usage',
-            '--disable-accelerated-2d-canvas',
-            '--no-first-run',
-            '--no-zygote',
-            '--single-process',
-            '--disable-gpu'
+            '--no-zygote'
         ],
     }
 });
 
-// AJUSTE 2: Exibir QR Code no terminal do Railway
 client.on('qr', (qr) => {
     console.log('--- NOVO QR CODE GERADO ---');
-    // A opção 'small: true' ajuda muito a não quebrar as linhas
     qrcode.generate(qr, {small: true});
-    
-    // Esse link abaixo você pode copiar e colar no navegador do seu celular
-    // Ele gera uma imagem perfeita do QR Code para você escanear
-    console.log('Caso não consiga escanear acima, acesse este link:');
+    console.log('Acesse este link para ver o QR Code se o terminal bugar:');
     console.log(`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qr)}`);
 });
 
 client.on('ready', () => {
-    console.log('✅ Bot logado com sucesso na nuvem!');
+    console.log('✅ Bot logado com sucesso!');
 });
 
 client.initialize();
@@ -47,45 +42,43 @@ app.post('/disparar', async (req, res) => {
     const { mensagem, contato, horario } = req.body;
 
     if (!mensagem || !contato || !horario) {
-        return res.status(400).json({ status: 'Faltam dados!' });
+        return res.status(400).json({ status: 'erro', mensagem: 'Faltam dados!' });
     }
 
-    console.log(`📅 Agendado para: ${contato} às ${horario}`);
+    console.log(`📅 Recebido: ${contato} para às ${horario}`);
 
     const tempoAteEnviar = new Date(horario) - new Date();
 
-    if (tempoAteEnviar < 0) {
-        return res.status(400).json({ status: 'Horário já passou!' });
+    // Se o horário for muito curto ou já passou, enviamos um aviso
+    if (tempoAteEnviar < -60000) { // tolerância de 1 minuto
+        return res.status(400).json({ status: 'erro', mensagem: 'O horário já passou!' });
     }
 
+    // Agenda o envio
     setTimeout(async () => {
         try {
-            // Se o contato for um nome, tentamos buscar o ID dele
-            let chatId;
-            if (contato.match(/^\d+$/)) {
-                chatId = `${contato.replace(/\D/g, '')}@c.us`;
-            } else {
-                // Se for nome, busca nos contatos
-                const chats = await client.getChats();
-                const chat = chats.find(c => c.name === contato);
-                chatId = chat ? chat.id._serialized : null;
-            }
-
-            if (chatId) {
-                await client.sendMessage(chatId, mensagem);
+            const chats = await client.getChats();
+            const chat = chats.find(c => c.name === contato || c.id._serialized.includes(contato));
+            
+            if (chat) {
+                await client.sendMessage(chat.id._serialized, mensagem);
                 console.log(`🚀 Mensagem enviada para ${contato}`);
             } else {
-                console.error(`❌ Não achei o chat de: ${contato}`);
+                console.error(`❌ Chat não encontrado: ${contato}`);
             }
         } catch (err) {
             console.error(`❌ Erro no envio:`, err);
         }
-    }, tempoAteEnviar);
+    }, Math.max(tempoAteEnviar, 0));
 
-    res.json({ status: 'Agendado na nuvem!' });
+    // RESPOSTA PARA A EXTENSÃO (Obrigatório para sumir o erro)
+    res.status(200).json({ 
+        status: 'sucesso', 
+        mensagem: 'Agendado na nuvem!',
+        detalhes: { contato, horario }
+    });
 });
 
-// AJUSTE 3: Porta dinâmica (O Railway escolhe a porta, não pode ser fixa 3001)
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🌍 Servidor rodando na porta ${PORT}`);
