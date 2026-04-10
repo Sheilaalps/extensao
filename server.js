@@ -2,10 +2,10 @@ const express = require('express');
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const cors = require('cors');
 const qrcode = require('qrcode-terminal');
-
 const app = express();
-app.use(express.json());
-app.use(cors());
+
+app.use(cors()); // Libera a comunicação com a extensão
+app.use(express.json()); // Permite ler o JSON enviado
 
 // Rota de teste para ver no navegador se o servidor está vivo
 app.get('/', (req, res) => {
