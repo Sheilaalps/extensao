@@ -27,8 +27,14 @@ const client = new Client({
 
 // AJUSTE 2: Exibir QR Code no terminal do Railway
 client.on('qr', (qr) => {
-    console.log('--- ESCANEIE O QR CODE ABAIXO ---');
+    console.log('--- NOVO QR CODE GERADO ---');
+    // A opção 'small: true' ajuda muito a não quebrar as linhas
     qrcode.generate(qr, {small: true});
+    
+    // Esse link abaixo você pode copiar e colar no navegador do seu celular
+    // Ele gera uma imagem perfeita do QR Code para você escanear
+    console.log('Caso não consiga escanear acima, acesse este link:');
+    console.log(`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(qr)}`);
 });
 
 client.on('ready', () => {
