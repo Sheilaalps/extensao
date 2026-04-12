@@ -9,9 +9,11 @@ app.use(express.json());
 let agendamentos = [];
 let sock;
 
-// 🔌 CONECTAR WHATSAPP
+// 🔌 WHATSAPP (SEGURO)
 async function conectarWhatsApp() {
     try {
+        console.log("🔄 iniciando WhatsApp...");
+
         const { state, saveCreds } = await useMultiFileAuthState('./auth');
 
         sock = makeWASocket({
@@ -20,10 +22,11 @@ async function conectarWhatsApp() {
 
         sock.ev.on('creds.update', saveCreds);
 
-        sock.ev.on('connection.update', ({ connection, qr }) => {
+        sock.ev.on('connection.update', (update) => {
+            const { connection, qr } = update;
 
             if (qr) {
-                console.log("📲 ESCANEIA O QR NO WHATSAPP");
+                console.log("📲 ESCANEIA O QR CODE");
             }
 
             if (connection === 'open') {
@@ -31,35 +34,39 @@ async function conectarWhatsApp() {
             }
 
             if (connection === 'close') {
-                console.log("❌ WhatsApp desconectado, tentando reconectar...");
-                setTimeout(conectarWhatsApp, 5000);
+                console.log("⚠️ WhatsApp caiu, reconectando...");
+                setTimeout(() => {
+                    conectarWhatsApp();
+                }, 5000);
             }
         });
 
     } catch (err) {
-        console.error("❌ erro ao conectar WhatsApp:", err);
+        console.error("💥 ERRO WHATSAPP:", err);
     }
 }
 
-// inicia WhatsApp
-conectarWhatsApp();
+// 🚀 START SEGURO (EVITA CRASH NO RAILWAY)
+setTimeout(() => {
+    conectarWhatsApp();
+}, 3000);
 
 // 📤 ENVIAR MENSAGEM
 async function enviarMensagem(contato, mensagem) {
     try {
         if (!sock) {
-            console.log("❌ WhatsApp não conectado ainda");
+            console.log("❌ WhatsApp ainda não conectado");
             return;
         }
 
-        const numero = contato + "@s.whatsapp.net";
+        await sock.sendMessage(contato + "@s.whatsapp.net", {
+            text: mensagem
+        });
 
-        await sock.sendMessage(numero, { text: mensagem });
-
-        console.log("📨 enviada para:", contato);
+        console.log("📨 enviada:", contato);
 
     } catch (err) {
-        console.error("❌ erro ao enviar mensagem:", err);
+        console.error("❌ erro envio:", err);
     }
 }
 
@@ -71,9 +78,7 @@ setInterval(async () => {
 
         if (item.status !== "pendente") continue;
 
-        const horario = new Date(item.horario).getTime();
-
-        if (horario <= agora) {
+        if (new Date(item.horario).getTime() <= agora) {
 
             console.log("🚀 DISPARANDO:", item);
 
@@ -82,10 +87,12 @@ setInterval(async () => {
             item.status = "enviado";
         }
     }
+
 }, 5000);
 
-// 📥 SALVAR AGENDAMENTO
+// 📥 AGENDAR MENSAGEM
 app.post('/disparar', (req, res) => {
+
     const { mensagem, contato, horario } = req.body;
 
     if (!mensagem || !contato || !horario) {
@@ -118,6 +125,7 @@ app.delete('/deletar/:id', (req, res) => {
 
 // ✏️ EDITAR
 app.put('/editar/:id', (req, res) => {
+
     const item = agendamentos.find(a => a.id == req.params.id);
 
     if (!item) {
@@ -135,7 +143,7 @@ app.get('/', (req, res) => {
     res.send("API ONLINE 🚀");
 });
 
-// 🚀 START SERVER (IMPORTANTE PRA RAILWAY)
+// 🚀 SERVER START (RAILWAY SAFE)
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
