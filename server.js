@@ -11,33 +11,44 @@ let sock;
 
 // 🔌 CONECTAR WHATSAPP
 async function conectarWhatsApp() {
-    const { state, saveCreds } = await useMultiFileAuthState('./auth');
+    try {
+        const { state, saveCreds } = await useMultiFileAuthState('./auth');
 
-    sock = makeWASocket({
-        auth: state
-    });
+        sock = makeWASocket({
+            auth: state
+        });
 
-    sock.ev.on('creds.update', saveCreds);
+        sock.ev.on('creds.update', saveCreds);
 
-    sock.ev.on('connection.update', ({ connection, qr }) => {
+        sock.ev.on('connection.update', ({ connection, qr }) => {
 
-        if (qr) {
-            console.log("📲 ESCANEIA O QR NO WHATSAPP");
-        }
+            if (qr) {
+                console.log("📲 ESCANEIA O QR NO WHATSAPP");
+            }
 
-        if (connection === 'open') {
-            console.log("✅ WHATSAPP CONECTADO!");
-        }
-    });
+            if (connection === 'open') {
+                console.log("✅ WHATSAPP CONECTADO!");
+            }
+
+            if (connection === 'close') {
+                console.log("❌ WhatsApp desconectado, tentando reconectar...");
+                setTimeout(conectarWhatsApp, 5000);
+            }
+        });
+
+    } catch (err) {
+        console.error("❌ erro ao conectar WhatsApp:", err);
+    }
 }
 
+// inicia WhatsApp
 conectarWhatsApp();
 
 // 📤 ENVIAR MENSAGEM
 async function enviarMensagem(contato, mensagem) {
     try {
         if (!sock) {
-            console.log("❌ WhatsApp não conectado");
+            console.log("❌ WhatsApp não conectado ainda");
             return;
         }
 
@@ -45,14 +56,14 @@ async function enviarMensagem(contato, mensagem) {
 
         await sock.sendMessage(numero, { text: mensagem });
 
-        console.log("📨 enviada:", contato);
+        console.log("📨 enviada para:", contato);
 
     } catch (err) {
-        console.error("❌ erro ao enviar:", err);
+        console.error("❌ erro ao enviar mensagem:", err);
     }
 }
 
-// ⏰ AGENDADOR (RODA SOZINHO)
+// ⏰ AGENDADOR
 setInterval(async () => {
     const agora = Date.now();
 
@@ -109,7 +120,9 @@ app.delete('/deletar/:id', (req, res) => {
 app.put('/editar/:id', (req, res) => {
     const item = agendamentos.find(a => a.id == req.params.id);
 
-    if (!item) return res.status(404).json({ erro: "Não encontrado" });
+    if (!item) {
+        return res.status(404).json({ erro: "Não encontrado" });
+    }
 
     item.mensagem = req.body.mensagem || item.mensagem;
     item.horario = req.body.horario || item.horario;
@@ -117,14 +130,14 @@ app.put('/editar/:id', (req, res) => {
     res.json({ status: "Atualizado", item });
 });
 
-// TESTE
+// 🔥 TESTE
 app.get('/', (req, res) => {
     res.send("API ONLINE 🚀");
 });
 
-// START
+// 🚀 START SERVER (IMPORTANTE PRA RAILWAY)
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-    console.log("🚀 Servidor rodando");
+    console.log("🚀 Servidor rodando na porta " + PORT);
 });
