@@ -1,50 +1,58 @@
 const express = require('express');
 const cors = require('cors');
-
-// ⚠️ se der erro de fetch, roda: npm install node-fetch
-const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
+const { default: makeWASocket, useMultiFileAuthState } = require('@whiskeysockets/baileys');
 
 const app = express();
-
 app.use(cors());
 app.use(express.json());
 
-// 🧠 banco temporário
 let agendamentos = [];
+let sock;
 
-// 🔥 CONFIG Z-API (COLOCA OS SEUS DADOS)
-const ZAPI_URL = "https://api.z-api.io/instances/3F184AB1F43732F275DF9E648AE68DF9/token/0A6FC94D3A3FDF87B65EE45E/send-text";
+// 🔌 CONECTAR WHATSAPP
+async function conectarWhatsApp() {
+    const { state, saveCreds } = await useMultiFileAuthState('./auth');
 
-// 📲 FUNÇÃO DE ENVIO REAL
+    sock = makeWASocket({
+        auth: state
+    });
+
+    sock.ev.on('creds.update', saveCreds);
+
+    sock.ev.on('connection.update', ({ connection, qr }) => {
+
+        if (qr) {
+            console.log("📲 ESCANEIA O QR NO WHATSAPP");
+        }
+
+        if (connection === 'open') {
+            console.log("✅ WHATSAPP CONECTADO!");
+        }
+    });
+}
+
+conectarWhatsApp();
+
+// 📤 ENVIAR MENSAGEM
 async function enviarMensagem(contato, mensagem) {
     try {
-        console.log(`📨 ENVIANDO → ${contato}: ${mensagem}`);
+        if (!sock) {
+            console.log("❌ WhatsApp não conectado");
+            return;
+        }
 
-        const res = await fetch(ZAPI_URL, {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-                phone: contato,
-                message: mensagem
-            })
-        });
+        const numero = contato + "@s.whatsapp.net";
 
-        const data = await res.json();
+        await sock.sendMessage(numero, { text: mensagem });
 
-        console.log("📦 RESPOSTA Z-API:", data);
-
-        if (!res.ok) throw new Error("Erro ao enviar");
-
-        console.log("✅ enviada com sucesso");
+        console.log("📨 enviada:", contato);
 
     } catch (err) {
-        console.error("❌ ERRO AO ENVIAR:", err.message);
+        console.error("❌ erro ao enviar:", err);
     }
 }
 
-// ⏰ SCHEDULER (RODA A CADA 5 SEGUNDOS)
+// ⏰ AGENDADOR (RODA SOZINHO)
 setInterval(async () => {
     const agora = Date.now();
 
@@ -55,22 +63,19 @@ setInterval(async () => {
         const horario = new Date(item.horario).getTime();
 
         if (horario <= agora) {
-            console.log("⏰ HORA DE ENVIAR:", item);
+
+            console.log("🚀 DISPARANDO:", item);
 
             await enviarMensagem(item.contato, item.mensagem);
 
             item.status = "enviado";
-
-            console.log("🚀 DISPARADO:", item);
         }
     }
 }, 5000);
 
-// ✅ SALVAR AGENDAMENTO
+// 📥 SALVAR AGENDAMENTO
 app.post('/disparar', (req, res) => {
     const { mensagem, contato, horario } = req.body;
-
-    console.log("📩 BODY RECEBIDO:", req.body);
 
     if (!mensagem || !contato || !horario) {
         return res.status(400).json({ erro: "Dados inválidos" });
@@ -86,12 +91,7 @@ app.post('/disparar', (req, res) => {
 
     agendamentos.push(novo);
 
-    console.log("📦 SALVO:", novo);
-
-    res.json({
-        status: "Agendado com sucesso",
-        item: novo
-    });
+    res.json({ status: "Agendado", item: novo });
 });
 
 // 📋 HISTÓRICO
@@ -99,37 +99,32 @@ app.get('/historico', (req, res) => {
     res.json(agendamentos);
 });
 
-// ✏️ EDITAR
-app.put('/editar/:id', (req, res) => {
-    const { id } = req.params;
-    const { mensagem, horario } = req.body;
-
-    const item = agendamentos.find(a => a.id == id);
-
-    if (!item) {
-        return res.status(404).json({ erro: "Não encontrado" });
-    }
-
-    if (mensagem) item.mensagem = mensagem;
-    if (horario) item.horario = horario;
-
-    res.json({ status: "Atualizado", item });
-});
-
-// 🗑️ DELETAR
+// ❌ DELETAR
 app.delete('/deletar/:id', (req, res) => {
     agendamentos = agendamentos.filter(a => a.id != req.params.id);
     res.json({ status: "Removido" });
 });
 
-// 🧪 TESTE
+// ✏️ EDITAR
+app.put('/editar/:id', (req, res) => {
+    const item = agendamentos.find(a => a.id == req.params.id);
+
+    if (!item) return res.status(404).json({ erro: "Não encontrado" });
+
+    item.mensagem = req.body.mensagem || item.mensagem;
+    item.horario = req.body.horario || item.horario;
+
+    res.json({ status: "Atualizado", item });
+});
+
+// TESTE
 app.get('/', (req, res) => {
     res.send("API ONLINE 🚀");
 });
 
-// 🚀 PORTA
+// START
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-    console.log(`🚀 Servidor rodando na porta ${PORT}`);
+    console.log("🚀 Servidor rodando");
 });
